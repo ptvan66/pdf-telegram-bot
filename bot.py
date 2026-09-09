@@ -16,7 +16,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 # ── Cấu hình ──────────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN",    "YOUR_TELEGRAM_BOT_TOKEN")
 GOOGLE_API_KEY   = os.environ.get("GOOGLE_API_KEY",    "YOUR_GOOGLE_API_KEY")
-GEMINI_MODEL     = "gemini-2.0-flash"   # miễn phí, nhanh, đủ mạnh
+GEMINI_MODEL     = "gemini-2.5-flash"   # miễn phí, nhanh, đủ mạnh
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
