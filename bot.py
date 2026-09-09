@@ -16,7 +16,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 # ── Cấu hình ──────────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN",    "YOUR_TELEGRAM_BOT_TOKEN")
 GOOGLE_API_KEY   = os.environ.get("GOOGLE_API_KEY",    "YOUR_GOOGLE_API_KEY")
-GEMINI_MODEL     = "gemini-3.6-flash"   # miễn phí, nhanh, đủ mạnh
+GEMINI_MODEL     = "gemini-3.6-flash"
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -24,59 +24,53 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Khởi tạo Gemini client
 gemini_client = genai.Client(api_key=GOOGLE_API_KEY)
 
 # ── Prompt trích xuất dữ liệu ─────────────────────────────────────────────────
-EXTRACTION_PROMPT = """Bạn là chuyên gia trích xuất dữ liệu từ hồ sơ kiểm nghiệm. Phân tích văn bản PDF dưới đây và trích xuất thông tin theo đúng quy tắc:
+EXTRACTION_PROMPT = """Bạn là chuyên gia trích xuất dữ liệu từ hồ sơ kiểm nghiệm. Đọc toàn bộ PDF và trích xuất TỪNG hồ sơ theo đúng thứ tự xuất hiện trong tài liệu.
 
 === QUY TẮC TRÍCH XUẤT ===
 
-## ĐỐI VỚI HỒ SƠ BIÊN BẢN LẤY MẪU:
-Trích xuất chính xác 100%:
-1. Tên tổ chức, cá nhân
-2. Địa chỉ
-3. Tên sản phẩm, hàng hóa (xuống hàng với từng tên sản phẩm)
-4. Dạng sản phẩm (CHỈ lấy nếu văn bản có chữ "dạng ..."; không lấy mùi, màu; không ghi "dạng mẫu")
-5. Mã mẫu (phân tách bằng dấu phẩy, không ghi chữ "mã mẫu")
-6. Số tờ khai HQ (nếu không có trong biên bản thì tìm ở Trang Phụ lục; phải đúng định dạng 12 chữ số)
+PHIẾU YÊU CẦU THỬ NGHIỆM - trích xuất:
+- Số phiếu (VD: 3431/26/DV)
+- Tên và địa chỉ trong mục "Thông tin khách hàng"
+- Danh sách tên mẫu: mỗi tên mẫu 1 dòng riêng. Kèm số tờ khai hải quan (12 số) nếu có.
 
-Ghép thành 1 câu cho từng sản phẩm theo mẫu:
-[Tên sản phẩm]: [dạng - chữ d viết thường, BỎ TRỐNG nếu không có], bảo quản ở nhiệt độ thường, [mã mẫu], tờ khai số [12 số - BỎ TRỐNG nếu không có]
+BIÊN BẢN LẤY MẪU - trích xuất:
+- Số biên bản (VD: 1981/QĐ-TTKN)
+- Tên tổ chức/cá nhân và địa chỉ
+- Với TỪNG sản phẩm ghép thành câu:
+  [Tên SP]: [dạng xxx nếu văn bản có chữ "dạng"; d viết thường; KHÔNG ghi "dạng mẫu"/mùi/màu; BỎ TRỐNG nếu không có], bảo quản ở nhiệt độ thường, [mã mẫu phân cách bằng dấu phẩy], tờ khai số [12 chữ số, tìm ở Phụ lục nếu không có trong biên bản; BỎ TRỐNG nếu không có]
 
-## ĐỐI VỚI HỒ SƠ PHIẾU YÊU CẦU THỬ NGHIỆM:
-Trích xuất chính xác 100%:
-7. Tên và địa chỉ trong mục "Thông tin khách hàng"
-8. Tên mẫu (xuống hàng với từng tên mẫu, kèm số tờ khai hải quan nếu có)
+=== ĐỊNH DẠNG ĐẦU RA BẮT BUỘC ===
 
-=== ĐỊNH DẠNG ĐẦU RA ===
+Xuất TỪNG hồ sơ theo thứ tự xuất hiện. Template cố định:
 
-Nếu tìm thấy BIÊN BẢN LẤY MẪU:
---- BIÊN BẢN LẤY MẪU ---
-Tổ chức/Cá nhân: [tên]
-Địa chỉ: [địa chỉ]
+Với PHIẾU YÊU CẦU THỬ NGHIỆM:
+ĐỐI VỚI HỒ SƠ PHIẾU YÊU CẦU THỬ NGHIỆM (Số: [số phiếu])
 
-Danh sách mẫu:
-[câu ghép từng sản phẩm, mỗi sản phẩm 1 dòng]
+1. Tên và địa chỉ: [tên công ty]. [địa chỉ]
+2. Tên mẫu: [tên mẫu 1]
+[tên mẫu 2]
+[tên mẫu 3, tờ khai nếu có]
 
-Nếu tìm thấy PHIẾU YÊU CẦU THỬ NGHIỆM:
---- PHIẾU YÊU CẦU THỬ NGHIỆM ---
-Khách hàng: [tên]
-Địa chỉ: [địa chỉ]
+Với BIÊN BẢN LẤY MẪU:
+ĐỐI VỚI HỒ SƠ BIÊN BẢN LẤY MẪU (Số: [số biên bản])
 
-Danh sách mẫu:
-[tên mẫu + tờ khai nếu có, mỗi mẫu 1 dòng]
+1. Tên tổ chức, cá nhân: [tên]
+2. Địa chỉ: [địa chỉ]
+3. Tên sản phẩm, hàng hóa: [Tên SP 1] [Tên SP 2] ...
+4. [Tên SP 1]: [dạng nếu có], bảo quản ở nhiệt độ thường, [mã mẫu], tờ khai số [12 số]
+[Tên SP 2]: [dạng nếu có], bảo quản ở nhiệt độ thường, [mã mẫu], tờ khai số [12 số]
 
-Nếu tài liệu có cả hai loại, xuất đủ cả hai phần theo thứ tự xuất hiện.
-Nếu không tìm thấy, ghi: "Không tìm thấy [loại hồ sơ] trong tài liệu."
+Cách nhau 1 dòng trống giữa các hồ sơ.
+KHÔNG thêm ghi chú hay giải thích ngoài template trên.
 
 === NỘI DUNG PDF ===
-{pdf_text}
 """
 
 # ── Hàm đọc PDF ───────────────────────────────────────────────────────────────
 def extract_text_from_pdf(pdf_path: str) -> str:
-    """Trích xuất toàn bộ text từ PDF, giữ nguyên layout."""
     parts = []
     with pdfplumber.open(pdf_path) as pdf:
         for i, page in enumerate(pdf.pages):
@@ -92,14 +86,13 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 # ── Gọi Gemini API ─────────────────────────────────────────────────────────────
 def process_with_gemini(pdf_text: str) -> str:
-    """Gửi text đến Gemini để trích xuất dữ liệu."""
-    prompt = EXTRACTION_PROMPT.format(pdf_text=pdf_text)
+    prompt = EXTRACTION_PROMPT + pdf_text
     response = gemini_client.models.generate_content(
         model=GEMINI_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
-            temperature=0,          # kết quả ổn định, không sáng tạo
-            max_output_tokens=4096,
+            temperature=0,
+            max_output_tokens=8192,
         )
     )
     return response.text
@@ -122,12 +115,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "3. Kết quả trả về trong vài giây\n\n"
         "⚠️ Lưu ý:\n"
         "• Chỉ hỗ trợ PDF dạng text (không phải scan)\n"
-        "• Dung lượng tối đa 20MB\n"
-        "• Hoàn toàn MIỄN PHÍ với Google AI Studio"
+        "• Dung lượng tối đa 20MB"
     )
 
 async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Nhận PDF → đọc text → gọi Gemini → trả kết quả."""
     document = update.message.document
 
     if not document.file_name.lower().endswith(".pdf"):
@@ -138,24 +129,19 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     tmp_path = None
     try:
-        # Tải file
         file = await context.bot.get_file(document.file_id)
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             await file.download_to_drive(tmp.name)
             tmp_path = tmp.name
 
-        # Đọc PDF
         await processing_msg.edit_text("⏳ Đang đọc nội dung PDF...")
         pdf_text = extract_text_from_pdf(tmp_path)
 
-        # Gọi Gemini
         await processing_msg.edit_text("🤖 Đang phân tích với Gemini AI...")
         result = process_with_gemini(pdf_text)
 
-        # Xoá thông báo chờ
         await processing_msg.delete()
 
-        # Gửi kết quả (Telegram giới hạn 4096 ký tự/tin nhắn)
         header = f"✅ Kết quả từ: {document.file_name}\n{'─'*40}\n\n"
         full_result = header + result
 
@@ -186,9 +172,6 @@ def main():
     if missing:
         for var in missing:
             print(f"❌ Chưa cấu hình: {var}")
-        print("\nChạy lệnh sau rồi thử lại:")
-        print('  export TELEGRAM_TOKEN="token_của_bạn"')
-        print('  export GOOGLE_API_KEY="key_của_bạn"')
         return
 
     print(f"🚀 Bot khởi động | Model: {GEMINI_MODEL}")
