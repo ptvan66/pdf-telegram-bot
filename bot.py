@@ -186,10 +186,17 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                     await update.message.reply_text(chunk)
 
     except RuntimeError as e:
-        await processing_msg.edit_text(f"❌ {str(e)}")
+        try:
+            await processing_msg.edit_text(f"❌ {str(e)}")
+        except Exception:
+            await update.message.reply_text(f"❌ {str(e)}")
     except Exception as e:
         logger.error(f"Lỗi xử lý PDF: {e}", exc_info=True)
-        await processing_msg.edit_text(f"❌ Lỗi không xác định:\n{str(e)}")
+        err_text = f"❌ Lỗi không xác định:\n{str(e)}"
+        try:
+            await processing_msg.edit_text(err_text)
+        except Exception:
+            await update.message.reply_text(err_text)
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
