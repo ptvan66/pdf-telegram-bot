@@ -1,13 +1,12 @@
 """
 Telegram Bot - Xử lý PDF Biên Bản Lấy Mẫu & Phiếu Yêu Cầu Thử Nghiệm
 Sử dụng: Google AI Studio (Gemini) - Miễn phí
-Yêu cầu: pip install python-telegram-bot pdfplumber google-genai
+Yêu cầu: pip install python-telegram-bot google-genai
 """
 
 import os
 import logging
 import tempfile
-import pdfplumber
 from google import genai
 from google.genai import types
 from telegram import Update
@@ -73,27 +72,20 @@ KHÔNG thêm {{CHECK}} vào số hồ sơ, số tờ khai, mã mẫu, tên công
 === NỘI DUNG PDF ===
 """
 
-# ── Hàm đọc PDF ───────────────────────────────────────────────────────────────
-def extract_text_from_pdf(pdf_path: str) -> str:
-    parts = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for i, page in enumerate(pdf.pages):
-            text = page.extract_text() or ""
-            if text.strip():
-                parts.append(f"[TRANG {i+1}]\n{text}")
-    if not parts:
-        raise RuntimeError(
-            "Không đọc được text từ PDF.\n"
-            "PDF của bạn có thể là dạng scan/ảnh — cần OCR trước."
-        )
-    return "\n\n".join(parts)
+# ── Gửi PDF trực tiếp lên Gemini (không qua pdfplumber) ──────────────────────
+def process_pdf_with_gemini(pdf_path: str) -> str:
+    """Đọc file PDF, upload lên Gemini, để AI đọc trực tiếp."""
+    # Đọc file thành bytes
+    with open(pdf_path, "rb") as f:
+        pdf_bytes = f.read()
 
-# ── Gọi Gemini API ─────────────────────────────────────────────────────────────
-def process_with_gemini(pdf_text: str) -> str:
-    prompt = EXTRACTION_PROMPT + pdf_text
+    # Gửi PDF + prompt lên Gemini
     response = gemini_client.models.generate_content(
         model=GEMINI_MODEL,
-        contents=prompt,
+        contents=[
+            types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+            types.Part.from_text(text=EXTRACTION_PROMPT),
+        ],
         config=types.GenerateContentConfig(
             temperature=0,
             max_output_tokens=16384,
@@ -138,11 +130,8 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             await file.download_to_drive(tmp.name, read_timeout=120, write_timeout=120, connect_timeout=60)
             tmp_path = tmp.name
 
-        await processing_msg.edit_text("⏳ Đang đọc nội dung PDF...")
-        pdf_text = extract_text_from_pdf(tmp_path)
-
         await processing_msg.edit_text("🤖 Đang phân tích với Gemini AI...")
-        result = process_with_gemini(pdf_text)
+        result = process_pdf_with_gemini(tmp_path)
 
         await processing_msg.delete()
 
