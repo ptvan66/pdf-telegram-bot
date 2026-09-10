@@ -78,9 +78,7 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     parts = []
     with pdfplumber.open(pdf_path) as pdf:
         for i, page in enumerate(pdf.pages):
-            text_layout = page.extract_text(layout=True) or ""
-            text_normal = page.extract_text(x_tolerance=3, y_tolerance=3) or ""
-            text = text_layout if len(text_layout) >= len(text_normal) else text_normal
+            text = page.extract_text() or ""
             if text.strip():
                 parts.append(f"[TRANG {i+1}]\n{text}")
     if not parts:
