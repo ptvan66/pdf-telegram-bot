@@ -65,8 +65,10 @@ Với BIÊN BẢN LẤY MẪU:
 
 Cách nhau 1 dòng trống giữa các hồ sơ.
 KHÔNG thêm ghi chú hay giải thích ngoài template trên.
-KHÔNG dùng [Không xác định] hay bất kỳ placeholder nào — chép nguyên văn từ PDF kể cả khi trông lạ.
-Nếu tên mẫu trong PDF trông vô nghĩa (chuỗi ký tự lạ), vẫn chép nguyên, thêm ⚠️ phía sau để đánh dấu.
+Chép nguyên văn từ PDF, KHÔNG tự sửa hay đoán bất kỳ từ nào.
+Nếu tên mẫu/tên sản phẩm trông vô nghĩa (chuỗi ký tự ngẫu nhiên không phải tên khoa học hay mã số hợp lệ), chép nguyên và thêm {{CHECK}} ngay sau từ đó trong cùng dòng.
+Ví dụ: "LBcl02yurr {{CHECK}}" hoặc "Sodium Bicarbonate" (bình thường thì không thêm gì).
+KHÔNG thêm {{CHECK}} vào số hồ sơ, số tờ khai, mã mẫu, tên công ty, địa chỉ — chỉ áp dụng cho tên mẫu/tên sản phẩm trông bất thường.
 
 === NỘI DUNG PDF ===
 """
@@ -146,8 +148,22 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
         await processing_msg.delete()
 
+        # ── Tách kết quả sạch và danh sách cần kiểm tra ──
+        clean_lines = []
+        check_lines = []
+        for line_num, line in enumerate(result.split("\n"), 1):
+            if "{CHECK}" in line:
+                clean_line = line.replace(" {CHECK}", "").replace("{CHECK}", "")
+                clean_lines.append(clean_line)
+                check_lines.append(f"Dòng {line_num}: {clean_line.strip()}")
+            else:
+                clean_lines.append(line)
+
+        clean_result = "\n".join(clean_lines)
+
+        # ── Gửi tin nhắn 1: kết quả sạch ──
         header = f"✅ Kết quả từ: {document.file_name}\n{'─'*40}\n\n"
-        full_result = header + result
+        full_result = header + clean_result
 
         if len(full_result) <= 4096:
             await update.message.reply_text(full_result)
@@ -156,6 +172,18 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             for idx, chunk in enumerate(chunks):
                 prefix = f"(Phần {idx+1}/{len(chunks)})\n" if len(chunks) > 1 else ""
                 await update.message.reply_text(prefix + chunk)
+
+        # ── Gửi tin nhắn 2: cảnh báo (nếu có) ──
+        if check_lines:
+            warn_header = f"⚠️ Có {len(check_lines)} dòng cần kiểm tra thủ công:\n{'─'*40}\n"
+            warn_body = "\n".join(check_lines)
+            warn_msg = warn_header + warn_body
+            if len(warn_msg) <= 4096:
+                await update.message.reply_text(warn_msg)
+            else:
+                chunks = [warn_msg[i:i+4000] for i in range(0, len(warn_msg), 4000)]
+                for idx, chunk in enumerate(chunks):
+                    await update.message.reply_text(chunk)
 
     except RuntimeError as e:
         await processing_msg.edit_text(f"❌ {str(e)}")
