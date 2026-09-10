@@ -135,9 +135,9 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     tmp_path = None
     try:
-        file = await context.bot.get_file(document.file_id)
+        file = await context.bot.get_file(document.file_id, read_timeout=60, write_timeout=60, connect_timeout=60)
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            await file.download_to_drive(tmp.name)
+            await file.download_to_drive(tmp.name, read_timeout=120, write_timeout=120, connect_timeout=60)
             tmp_path = tmp.name
 
         await processing_msg.edit_text("⏳ Đang đọc nội dung PDF...")
@@ -207,7 +207,15 @@ def main():
         return
 
     print(f"🚀 Bot khởi động | Model: {GEMINI_MODEL}")
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(TELEGRAM_TOKEN)
+        .read_timeout(120)
+        .write_timeout(120)
+        .connect_timeout(60)
+        .pool_timeout(60)
+        .build()
+    )
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf))
