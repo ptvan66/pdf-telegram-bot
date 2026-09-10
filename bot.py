@@ -42,6 +42,12 @@ BIÊN BẢN LẤY MẪU - trích xuất:
 - Với TỪNG sản phẩm ghép thành câu:
   [Tên SP]: [dạng xxx nếu văn bản có chữ "dạng"; d viết thường; KHÔNG ghi "dạng mẫu"/mùi/màu; BỎ TRỐNG nếu không có], bảo quản ở nhiệt độ thường, [mã mẫu phân cách bằng dấu phẩy], tờ khai số [12 chữ số, tìm ở Phụ lục nếu không có trong biên bản; BỎ TRỐNG nếu không có]
 
+QUY TẮC PHÁT HIỆN LỖI FONT:
+- Nếu một từ/cụm từ trông vô nghĩa (chuỗi ký tự ngẫu nhiên không phải tên khoa học, mã số, hay từ có nghĩa trong tiếng Việt/Anh), thay bằng [Không xác định]
+- Ví dụ lỗi font: "LBcl02yurr" thay vì "Lactozyme" → ghi [Không xác định]
+- Ví dụ KHÔNG phải lỗi: "VICB12617658", "TDG.1981.01(H)", "108503789700" → đây là mã hợp lệ, giữ nguyên
+- Áp dụng cho: tên sản phẩm, tên mẫu — KHÔNG áp dụng cho mã số, số tờ khai
+
 === ĐỊNH DẠNG ĐẦU RA BẮT BUỘC ===
 
 Xuất TỪNG hồ sơ theo thứ tự xuất hiện. Template cố định:
@@ -65,20 +71,69 @@ Với BIÊN BẢN LẤY MẪU:
 
 Cách nhau 1 dòng trống giữa các hồ sơ.
 KHÔNG thêm ghi chú hay giải thích ngoài template trên.
+QUAN TRỌNG: Nếu thấy "[Không xác định]" trong văn bản, hãy GIỮ NGUYÊN cụm đó, KHÔNG tự suy đoán hay thay thế.
 
 === NỘI DUNG PDF ===
 """
 
 # ── Hàm đọc PDF ───────────────────────────────────────────────────────────────
+import re
+import unicodedata
+
+def is_likely_garbled(word: str) -> bool:
+    """
+    Phát hiện từ bị đọc sai font:
+    - Chứa ký tự không thuộc Latin/tiếng Việt/số/ký hiệu thông thường
+    - Hoặc chuỗi ký tự lạ không thể đọc được
+    """
+    if not word:
+        return False
+    # Cho phép: chữ cái Latin (kể cả có dấu tiếng Việt), số, dấu ngoặc, gạch ngang, dấu chấm, /
+    allowed = re.compile(
+        r"^[\w\s\-\.\,\/\(\)\+\%\:\;\'\"\[\]\!\?áàảãạăắặẳẵặâấầẩẫậđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵÁÀẢÃẠĂẮẶẲẴẶÂẤẦẨẪẬĐÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴ]*$",
+        re.UNICODE
+    )
+    # Nếu từ dài hơn 2 ký tự và không match allowed → có thể bị lỗi font
+    if len(word) > 2 and not allowed.match(word):
+        return True
+    # Kiểm tra tỷ lệ ký tự lạ (category không phải L, N, P, Z, S)
+    strange = sum(1 for c in word if unicodedata.category(c) not in
+                  ('Lu','Ll','Lt','Lm','Lo','Nd','Nl','No','Pc','Pd','Ps','Pe','Po','Zs','Sk','Sc'))
+    if len(word) > 0 and strange / len(word) > 0.4:
+        return True
+    return False
+
+def clean_garbled_text(text: str) -> str:
+    """Thay thế từ bị lỗi font bằng [Không xác định]."""
+    lines = text.split("\n")
+    cleaned_lines = []
+    for line in lines:
+        words = line.split(" ")
+        cleaned_words = []
+        i = 0
+        while i < len(words):
+            word = words[i]
+            if is_likely_garbled(word):
+                # Gom các từ lỗi liên tiếp thành 1 marker
+                while i + 1 < len(words) and is_likely_garbled(words[i + 1]):
+                    i += 1
+                cleaned_words.append("[Không xác định]")
+            else:
+                cleaned_words.append(word)
+            i += 1
+        cleaned_lines.append(" ".join(cleaned_words))
+    return "\n".join(cleaned_lines)
+
 def extract_text_from_pdf(pdf_path: str) -> str:
     parts = []
     with pdfplumber.open(pdf_path) as pdf:
         for i, page in enumerate(pdf.pages):
-            # Thử cả 2 phương pháp, lấy bản nhiều nội dung hơn
             text_layout = page.extract_text(layout=True) or ""
             text_normal = page.extract_text(x_tolerance=3, y_tolerance=3) or ""
             text = text_layout if len(text_layout) >= len(text_normal) else text_normal
             if text.strip():
+                # Làm sạch ký tự lỗi font trước khi gửi cho AI
+                text = clean_garbled_text(text)
                 parts.append(f"[TRANG {i+1}]\n{text}")
     if not parts:
         raise RuntimeError(
